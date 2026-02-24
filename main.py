@@ -1,255 +1,174 @@
-import discord
 import asyncio
+import discord
+import sys
 from discord.ext import commands
+from datetime import datetime
 
-# Permissions for the bot, allowing it to access all intents
-perm = discord.Intents.all()
-bot = commands.Bot(command_prefix='.', intents=perm)
+# Dev inputs
+token = input("Enter your bot token: ")
+ticket_main_channel_id = int(input("Enter the main ticket channel ID: "))
+ticket_open_category_id = int(input('Enter the open ticket category ID: '))
+ticket_finish_category_id = int(input("Enter the finished ticket category ID: "))
+ticket_emoji = "🎫"
 
+# Prefix for commands and permissions
+intents = discord.Intents.all()
+intents.guilds = True
+bot = commands.Bot(command_prefix='C.', intents=intents)
+
+# Event when the bot is ready
 @bot.event
 async def on_ready():
-    print('Bot is ready!')
+    print(f"Logged in as {bot.user}")
 
+    for guild in bot.guilds:
+        await ticket_menu(guild)
+    
+    
+
+# Latency command
 @bot.command()
 async def ping(ctx):
-    await ctx.reply('Pong!')
+    latency = bot.latency * 1000  # Convert to milliseconds
+    await ctx.send(f'Pong! Latency: {latency:.2f} ms')
 
-@bot.command()
-async def kick(ctx:commands.Context, member: discord.Member):
-    # Verify permissions
-    if not ctx.author.guild_permissions.kick_members:
-        await ctx.reply('❌ You dont have permission to kick members.')
+# Ticket System
+async def ticket_menu(guild: discord.Guild):
+    channel = guild.get_channel(ticket_main_channel_id)
+
+    if channel is None:
+        sys.exit('No ticket main channel ID has been found. Please start the bot and put the ID')
+    print(f'Channel found: {channel.name}')
+
+    embed = discord.Embed(
+        title='🎫 Ticket System',
+        description='Click the reaction below to create a new ticket.\n\n'
+                    '📝 **How to use:**\n'
+                    '1. Click the reaction 🎫\n'
+                    '2. You will be asked for the reason (Please enable DMs messages)\n'
+                    '3. A new private channel will be created\n'
+                    '4. Only admins, technicians and you will be able to see it',
+        color=discord.Color.red(),
+        )
+    embed.set_footer(text='Ticket System')
+
+    try:
+        await channel.purge(limit=None)
+        print(f'Channel {channel.name} cleaned successfully')
+    except Exception as e:
+        print(f'Error cleaning channel: {e}')
+    
+    new_message = await channel.send(embed=embed)
+    global ticket_message_id
+    ticket_message_id = new_message.id
+    await new_message.add_reaction(ticket_emoji)
+
+@bot.event
+async def on_reaction_add(reaction, user):
+    if reaction.message.id != ticket_message_id or str(reaction.emoji) != ticket_emoji:
+        return
+
+    if user.bot:
         return
     
-    # Ask for confirmation and reason
-    await ctx.reply(f'✅ Do you have sure you want to kick {member.mention}? Please type the reason for the kick or "cancel" to abort. You have 30 seconds.')
-    
+    if reaction.message.id != ticket_message_id:
+        return
+    if reaction.emoji == ticket_emoji:
+        await create_ticket(reaction, user)
+
+async def create_ticket(reaction, user):
+    guild = reaction.message.guild
     try:
-        # Wait for the user's response
-        msg = await bot.wait_for('message', 
-                                  check=lambda m: m.author == ctx.author and m.channel == ctx.channel,
-                                  timeout=30.0)
-        
-        # If the user types "cancel", abort the action
-        if msg.content.lower() == 'cancel':
-            await ctx.send('❌ Action cancelled.')
-            return
-        
-        # If the user provides a reason, kick the member and send a confirmation message
-        reason = msg.content
-        await member.kick(reason=reason)
-        await ctx.send(f'✅ {member.mention} was kicked from the server. Reason: {reason}')
-        
+        await reaction.remove(user)
+    except:
+        pass
+
+    try:
+        reason_embed = discord.Embed(
+            title='🎫 Why are you opening a ticket?',
+            description='Please describe the reason for your ticket in the next message. You have 2 minutes to respond.',
+            color=discord.Color.red()
+        )
+        await user.send(embed=reason_embed)
+    except Exception as e:
+        print(f'Error creating reason embed: {e}')
+
+    try:
+        reason_msg = await bot.wait_for(
+            'message',
+            check=lambda m: m.author == user and isinstance(m.channel, discord.DMChannel),
+            timeout=120.0
+        )
+        reason = reason_msg.content
     except asyncio.TimeoutError:
-        await ctx.send('⏱️ Timeout. Action cancelled.')
-
-@bot.command()
-async def ban(ctx:commands.Context, member: discord.Member):
-    # Verify permissions
-    if not ctx.author.guild_permissions.ban_members:
-        await ctx.reply('❌ You dont have permission to ban members.')
+        await user.send('⏱️ Timeout! You took too long to respond. Please react again to create a new ticket.')
         return
     
-    # Ask for confirmation and reason
-    await ctx.reply(f'✅ Do you have sure you want to ban {member.mention}? Please type the reason for the ban or "cancel" to abort. You have 30 seconds.')
-    
-    try:
-        # Wait for the user's response
-        msg = await bot.wait_for('message', 
-                                  check=lambda m: m.author == ctx.author and m.channel == ctx.channel,
-                                  timeout=30.0)
-        
-        # If the user types "cancel", abort the action
-        if msg.content.lower() == 'cancel':
-            await ctx.send('❌ Action cancelled.')
-            return
-        
-        # If the user provides a reason, ban the member and send a confirmation message
-        reason = msg.content
-        await member.ban(reason=reason)
-        await ctx.send(f'✅ {member.mention} was banned from the server. Reason: {reason}')
-        
-    except asyncio.TimeoutError:
-        await ctx.send('⏱️ Timeout. Action cancelled.')
+    # Ticket channel name formatting
+    ticket_number = f'ticket - {user.id}-{datetime.now()}'
 
-@bot.command()
-async def unban(ctx:commands.Context, user_id: int):
-    # Verify permissions
-    if not ctx.author.guild_permissions.ban_members:
-        await ctx.reply('❌ You dont have permission to unban members.')
-        return
-    
-    # Ask for confirmation
-    await ctx.reply(f'✅ Do you have sure you want to unban the user with ID {user_id}? Please type "yes" to confirm or "cancel" to abort. You have 30 seconds.')
-    
+    overwrites = {
+        guild.default_role: discord.PermissionOverwrite(view_channel=False),
+        user: discord.PermissionOverwrite(view_channel=True, send_messages=True),
+        guild.me: discord.PermissionOverwrite(view_channel=True)
+    }
+
+    # Creating Channel text
     try:
-        # Wait for the user's response
-        msg = await bot.wait_for('message', 
-                                  check=lambda m: m.author == ctx.author and m.channel == ctx.channel,
-                                  timeout=30.0)
-        
-        # If the user types "cancel", abort the action
-        if msg.content.lower() == 'cancel':
-            await ctx.send('❌ Action cancelled.')
-            return
-        
-        # If the user confirms, unban the member and send a confirmation message
-        if msg.content.lower() == 'yes':
-            user = await bot.fetch_user(user_id)
-            await ctx.guild.unban(user)
-            await ctx.send(f'✅ The user {user} was unbanned from the server.')
+        ticket_channel = await guild.create_text_channel(
+            name=ticket_number,
+            category=guild.get_channel(ticket_open_category_id),
+            overwrites=overwrites
+        )
+
+        embed = discord.Embed(
+                title='📋 Ticket Details',
+                description=f'**Who called:** {user.mention}\n'
+                            f'**Date/Time:** {datetime.now()}\n'
+                            f'**Status:** 🟢 Open\n\n'
+                            f'**Reason:** {reason}',
+                color=discord.Color.green()
+        )
+        embed.set_footer(text=f'Ticket ID: {ticket_channel.id}')
+        await ticket_channel.send(embed=embed)
+
+        confirm_embed = discord.Embed(
+            title='✅ Ticket Created',
+            description=f'Your ticket has been created in {ticket_channel.mention}\n\nReason: {reason}',
+            color=discord.Color.green()
+        )
+        await user.send(embed=confirm_embed)
+
+    except Exception as e:
+        print(f'Error creating ticket channel: {e}')
+        await user.send(f'❌ Error creating your ticket: {e}')
+    
+@bot.command()
+async def close(ctx):
+    if ctx.channel.category_id != ticket_open_category_id:
+        await ctx.send('This command can only be used in an open ticket channel.')
+        return
+    try:
+        await ctx.send('Enter if you are sure you want to close this ticket. (yes/no)')
+        response = await bot.wait_for(
+            'message',
+            check=lambda m: m.author == ctx.author and m.channel == ctx.channel,
+            timeout=60.0
+        )
+        if response.content.lower() == 'yes':
+            await ctx.channel.edit(category=ctx.guild.get_channel(ticket_finish_category_id))
+            await ctx.send('Ticket closed successfully.')
+            admin_role = discord.utils.find(lambda r: r.permissions.administrator, ctx.guild.roles)
+            if admin_role:
+                overwrite = ctx.channel.overwrites_for(admin_role)
         else:
-            await ctx.send('❌ Action cancelled.')
-        
+            await ctx.send('Ticket closing cancelled.')
     except asyncio.TimeoutError:
-        await ctx.send('⏱️ Timeout. Action cancelled.')
-
-@bot.command()
-async def clear(ctx:commands.Context, amount: int):
-    # Verify permissions
-    if not ctx.author.guild_permissions.manage_messages:
-        await ctx.reply('❌ You dont have permission to manage messages.')
-        return
+        await ctx.send('⏱️ Timeout! You took too long to respond. Please use the command again if you want to close the ticket.')
+    except Exception as e:
+        print(f'Error closing ticket: {e}')
+        await ctx.send(f'❌ Error closing the ticket: {e}')
     
-    # Ask for confirmation
-    await ctx.reply(f'✅ Do you have sure you want to clear {amount} messages? Please type "yes" to confirm or "cancel" to abort. You have 30 seconds.')
-    
-    try:
-        # Wait for the user's response
-        msg = await bot.wait_for('message', 
-                                  check=lambda m: m.author == ctx.author and m.channel == ctx.channel,
-                                  timeout=30.0)
-        
-        # If the user types "cancel", abort the action
-        if msg.content.lower() == 'cancel':
-            await ctx.send('❌ Ação cancelada.')
-            return
-        
-        # If the user confirms, clear the messages and send a confirmation message
-        if msg.content.lower() == 'yes':
-            await ctx.channel.purge(limit=amount)
-            await ctx.send(f'✅ {amount} mensagens foram limpas do canal.')
-        else:
-            await ctx.send('❌ Ação cancelada.')
-        
-    except asyncio.TimeoutError:
-        await ctx.send('⏱️ Tempo expirou. Ação cancelada.')
-    
-@bot.command()
-async def mute(ctx:commands.Context, member: discord.Member, duration: int):
-    # Verify permissions
-    if not ctx.author.guild_permissions.mute_members:
-        await ctx.reply('❌ You dont have permission to mute members.')
-        return
-    
-    # Ask for confirmation
-    await ctx.reply(f'✅ Do you have sure you want to mute {member.mention} for {duration} minutes? Please type "yes" to confirm or "cancel" to abort. You have 30 seconds.')
-    
-    try:
-        # Wait for the user's response
-        msg = await bot.wait_for('message', 
-                                  check=lambda m: m.author == ctx.author and m.channel == ctx.channel,
-                                  timeout=30.0)
-        
-        # If the user types "cancel", abort the action
-        if msg.content.lower() == 'cancel':
-            await ctx.send('❌ Ação cancelada.')
-            return
-        
-        # If the user confirms, mute the member and send a confirmation message
-        if msg.content.lower() == 'yes':
-            await member.edit(mute=True)
-            await ctx.send(f'✅ {member.mention} was muted for {duration} minutes.')
-            await asyncio.sleep(duration * 60)
-            await member.edit(mute=False)
-            await ctx.send(f'✅ {member.mention} was unmuted.')
-        else:
-            await ctx.send('❌ Action cancelled.')
-        
-    except asyncio.TimeoutError:
-        await ctx.send('⏱️ Timeout. Action cancelled.')
 
-@bot.command()
-async def unmute(ctx:commands.Context, member: discord.Member):
-    # Verify permissions
-    if not ctx.author.guild_permissions.mute_members:
-        await ctx.reply('❌ You dont have permission to unmute members.')
-        return
-    
-    # Ask for confirmation
-    await ctx.reply(f'✅ Do you have sure you want to unmute {member.mention}? Please type "yes" to confirm or "cancel" to abort. You have 30 seconds.')
-    
-    try:
-        # Wait for the user's response
-        msg = await bot.wait_for('message', 
-                                  check=lambda m: m.author == ctx.author and m.channel == ctx.channel,
-                                  timeout=30.0)
-        
-        # If the user types "cancel", abort the action
-        if msg.content.lower() == 'cancel':
-            await ctx.send('❌ Action cancelled.')
-            return
-        
-        # If the user confirms, unmute the member and send a confirmation message
-        if msg.content.lower() == 'yes':
-            await member.edit(mute=False)
-            await ctx.send(f'✅ {member.mention} was unmuted.')
-        else:
-            await ctx.send('❌ Action cancelled.')
-        
-    except asyncio.TimeoutError:
-        await ctx.send('⏱️ Timeout. Action cancelled.')
-
-@bot.command()
-async def warn(ctx:commands.Context, member: discord.Member, *, reason: str):
-    # Verify permissions
-    if not ctx.author.guild_permissions.kick_members:
-        await ctx.reply('❌ You dont have permission to warn members.')
-        return
-    
-    # Send a warning message to the member
-    await member.send(f'⚠️ You have been warned in {ctx.guild.name} for the following reason: {reason}')
-    await ctx.send(f'✅ {member.mention} has been warned. Reason: {reason}')
-
-    #If member has 1 warning, mute them for 10 minutes
-    await member.edit(mute=True)
-    await ctx.send(f'✅ {member.mention} was muted for 10 minutes.')
-    await asyncio.sleep(600)  # 10 minutes in seconds
-    await member.edit(mute=False)
-
-    #If member has 3 warnings, mute for 3 days them
-    if member.warns == 3:
-        await member.edit(mute=True)
-        await ctx.send(f'✅ {member.mention} was muted for 3 days.')
-        await asyncio.sleep(259200)  # 3 days in seconds
-        await member.edit(mute=False)
-
-    #If member has 5 warnings, ban them
-    if member.warns == 5:
-        await member.ban(reason='5 warnings')
-        await ctx.send(f'✅ {member.mention} was banned from the server for accumulating 5 warnings.')
-
-@bot.command()
-async def warns(ctx:commands.Context, member: discord.Member):
-    # Verify permissions
-    if not ctx.author.guild_permissions.kick_members:
-        await ctx.reply('❌ You dont have permission to view warnings.')
-        return
-    
-    # Send the number of warnings the member has
-    await ctx.send(f'⚠️ {member.mention} has {member.warns} warnings.')
-
-@bot.command()
-async def clearwarns(ctx:commands.Context, member: discord.Member):
-    # Verify permissions
-    if not ctx.author.guild_permissions.kick_members:
-        await ctx.reply('❌ You dont have permission to clear warnings.')
-        return
-    
-    # Clear the member's warnings
-    member.warns = 0
-    await ctx.send(f'✅ {member.mention}\'s warnings have been cleared.')
-
-
-# Run Bot
-bot.run('')
+#Run Bot
+bot.run(token)
