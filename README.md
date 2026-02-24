@@ -1,49 +1,3 @@
-<<<<<<< Updated upstream
-# Control
-
-Discord moderation bot built with Python and discord.py, featuring a ticket system for server management.
-
-## Overview
-
-This is a comprehensive Discord bot developed using discord.py that provides server administrators and moderators with essential tools for communicate with user in support tickets effectively.
-
-## Features
-
-- **Ticket System**
-  - Reaction-based ticket creation
-  - Private ticket channels with permission overwrites
-  - Automatic ticket categorization (open/finished)
-  - Confirmation prompts for critical actions
-  - DM-based reason collection
-
-- **Permission Verification**
-  - Command restrictions based on user permissions
-  - Safe role detection for admins
-  - Channel-specific command execution
-
-## Technologies
-
-- Python 3.8+
-- discord.py
-- asyncio
-
-## Installation
-
-1. Clone the repository
-2. Install dependencies: `pip install discord.py`
-3. Run the bot: `python main.py`
-4. Enter your bot token and channel/categories IDs in bash
-
-## Usage
-
-### Ticket System
-- React with 🎫 to create a ticket
-- Use `C.close` in ticket channel to close the ticket
-
-## Author
-
-- GitHub: https://github.com/nzlinaldi
-=======
 # Control Discord Ticket Bot
 
 This repository contains a Discord bot developed in Python using the `discord.py` library.  
@@ -120,4 +74,3 @@ python bot.py
 
 - GitHub: https://github.com/nzlinaldi  
 - LinkedIn: https://www.linkedin.com/in/enzo-linaldi-315204389/
->>>>>>> Stashed changes
