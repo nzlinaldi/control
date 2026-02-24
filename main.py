@@ -158,9 +158,9 @@ async def close(ctx):
         if response.content.lower() == 'yes':
             await ctx.channel.edit(category=ctx.guild.get_channel(ticket_finish_category_id))
             await ctx.send('Ticket closed successfully.')
-            admin_role = discord.utils.find(lambda r: r.permissions.administrator, ctx.guild.roles)
-            if admin_role:
-                overwrite = ctx.channel.overwrites_for(admin_role)
+        for member, overwrite in ctx.channel.overwrites.items():
+            if isinstance(member, discord.Member):
+                await ctx.channel.set_permissions(member, view_channel=False)
         else:
             await ctx.send('Ticket closing cancelled.')
     except asyncio.TimeoutError:
@@ -168,7 +168,6 @@ async def close(ctx):
     except Exception as e:
         print(f'Error closing ticket: {e}')
         await ctx.send(f'❌ Error closing the ticket: {e}')
-    
 
 #Run Bot
 bot.run(token)
